@@ -1,0 +1,51 @@
+name: PSP Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build EBOOT.PBP
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Pull official PSPDEV Docker image
+        run: docker pull pspdev/pspdev:latest
+
+      - name: Build 2048 in PSPDEV container
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/source" \
+            --workdir /source \
+            pspdev/pspdev:latest \
+            sh -lc 'make clean && make -j"$(nproc)"'
+
+      - name: Verify EBOOT
+        run: |
+          set -euo pipefail
+          test -s EBOOT.PBP
+          test -s PARAM.SFO
+          echo "EBOOT.PBP built successfully"
+          ls -lh EBOOT.PBP PARAM.SFO
+
+      - name: Prepare PSP-ready artifact
+        run: |
+          set -euo pipefail
+          mkdir -p dist/PSP/GAME/2048
+          cp EBOOT.PBP dist/PSP/GAME/2048/EBOOT.PBP
+
+      - name: Upload EBOOT artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2048-PSP
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
