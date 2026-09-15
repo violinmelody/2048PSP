@@ -1,0 +1,64 @@
+name: PPSSPP Smoketest
+
+on:
+  workflow_run:
+    workflows: ["PSP Build"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  test:
+    name: Test EBOOT in PPSSPP
+    # Only run when PSP Build completed successfully
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: 2048-PSP
+          path: dist/
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Verify PSP artifact
+        run: |
+          set -euo pipefail
+
+          test -s dist/PSP/GAME/2048/EBOOT.PBP
+
+          echo "=== PSP artifact ==="
+          ls -lh dist/PSP/GAME/2048/EBOOT.PBP
+
+      - name: Install PPSSPP
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y ppsspp
+
+      - name: Verify PPSSPP
+        run: |
+          set -euo pipefail
+
+          ppsspp --version || true
+          command -v ppsspp
+
+      - name: Run game in PPSSPP
+        run: |
+          set -euo pipefail
+
+          timeout 60s \
+            ppsspp \
+              --headless \
+              --fullscreen=false \
+              dist/PSP/GAME/2048/EBOOT.PBP
