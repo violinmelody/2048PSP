@@ -115,4 +115,4 @@ ms0:/PSP/GAME/2048/settings.dat
 
 ## License
 
-MIT. See `LICENSE`.
+MIT. See [LICENSE](./LICENSE).
