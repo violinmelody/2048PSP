@@ -16,12 +16,12 @@ jobs:
     name: Start EBOOT in PPSSPP
     runs-on: ubuntu-24.04
 
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+    permissions:
+      actions: read
+      contents: read
 
     steps:
-      - name: Download build artifact
+      - name: Download PSP artifact
         uses: dawidd6/action-download-artifact@v6
         with:
           workflow: build.yml
@@ -30,7 +30,7 @@ jobs:
           path: dist/
           branch: main
           repo: violinmelody/2048PSP
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify EBOOT
         shell: bash
@@ -46,23 +46,17 @@ jobs:
           file "$EBOOT"
 
       - name: Pull PPSSPP image
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker pull linuxserver/ppsspp:latest
+        run: docker pull linuxserver/ppsspp:latest
 
-      - name: Smoke test EBOOT with PPSSPP Headless
+      - name: Start EBOOT in PPSSPP Headless
         shell: bash
         run: |
           set -euo pipefail
 
           EBOOT="$GITHUB_WORKSPACE/dist/PSP/GAME/2048/EBOOT.PBP"
 
-          echo "=== Starting EBOOT in PPSSPP Headless ==="
+          echo "=== Creating PPSSPP container ==="
 
-          # Put the EBOOT in a container-owned writable filesystem.
-          # This avoids the permission problem caused by the previous
-          # :ro bind mount and avoids the image's normal GUI entrypoint.
           docker create \
             --name ppsspp-smoketest \
             --shm-size=8g \
@@ -71,53 +65,87 @@ jobs:
             -lc '
               set -e
 
-              echo "=== PPSSPP executable ==="
-              test -x /usr/bin/PPSSPPHeadless
-              /usr/bin/PPSSPPHeadless --help >/dev/null 2>&1 || true
+              mkdir -p /game
+
+              echo "Container initialized."
+              echo "Waiting for EBOOT..."
+
+              while [ ! -f /game/EBOOT.PBP ]; do
+                sleep 1
+              done
 
               echo "=== EBOOT ==="
-              test -s /game/EBOOT.PBP
               ls -lh /game/EBOOT.PBP
 
+              echo "=== PPSSPP executable ==="
+              test -x /usr/bin/PPSSPPHeadless
+
               echo "=== Launching PPSSPP ==="
+
               exec /usr/bin/PPSSPPHeadless \
                 --headless \
                 /game/EBOOT.PBP
             '
 
-          # Copy the artifact into the container instead of mounting it.
+          echo "=== Starting container ==="
+          docker start ppsspp-smoketest
+
+          echo "=== Waiting for /game ==="
+
+          for i in $(seq 1 30); do
+            if docker exec ppsspp-smoketest test -d /game; then
+              break
+            fi
+
+            sleep 1
+          done
+
+          docker exec ppsspp-smoketest test -d /game
+
+          echo "=== Copying EBOOT ==="
           docker cp "$EBOOT" ppsspp-smoketest:/game/EBOOT.PBP
 
-          echo "=== Container EBOOT permissions ==="
+          echo "=== Container EBOOT ==="
           docker exec ppsspp-smoketest ls -lh /game/EBOOT.PBP
 
+          echo "=== Waiting for PPSSPP ==="
+
           set +e
-          timeout --signal=SIGTERM 30s docker start -a ppsspp-smoketest
-          status=$?
+
+          timeout 30s \
+            sh -c 'while docker inspect -f "{{.State.Running}}" ppsspp-smoketest 2>/dev/null | grep -q true; do sleep 1; done'
+
+          wait_status=$?
+
+          docker logs ppsspp-smoketest
+
+          container_status="$(
+            docker inspect \
+              -f '{{.State.ExitCode}}' \
+              ppsspp-smoketest
+          )"
+
           set -e
 
-          echo "PPSSPP exit status: $status"
+          echo "Wait status: $wait_status"
+          echo "PPSSPP container exit status: $container_status"
 
-          if [ "$status" -eq 124 ]; then
-            echo "PPSSPP remained running for 30 seconds."
+          if [ "$wait_status" -eq 124 ]; then
+            echo "PPSSPP remained running."
             echo "EBOOT successfully started."
-            docker rm -f ppsspp-smoketest >/dev/null 2>&1 || true
             exit 0
           fi
 
-          if [ "$status" -eq 0 ]; then
+          if [ "$container_status" -eq 0 ]; then
             echo "PPSSPP exited normally."
             echo "EBOOT successfully started."
-            docker rm -f ppsspp-smoketest >/dev/null 2>&1 || true
             exit 0
           fi
 
-          echo "PPSSPP failed with status $status"
-          docker rm -f ppsspp-smoketest >/dev/null 2>&1 || true
-          exit "$status"
+          echo "PPSSPP failed with status $container_status"
+          exit "$container_status"
 
       - name: Cleanup
         if: always()
-        shell: bash
         run: |
           docker rm -f ppsspp-smoketest >/dev/null 2>&1 || true
