@@ -1,10 +1,14 @@
 name: Smoketest
 
 on:
+  # Automatically test after PSP Build succeeds
   workflow_run:
     workflows: ["PSP Build"]
     types:
       - completed
+
+  # Also allow manually running the test
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,17 +16,29 @@ permissions:
 
 jobs:
   test:
-    name: Test EBOOT in PPSSPP
-    # Only run when PSP Build completed successfully
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: Start EBOOT in PPSSPP
+    # For automatic runs: only continue if the build succeeded.
+    # For manual runs: always continue.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
 
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
+      - name: Download latest build artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: build.yml
+          workflow_conclusion: success
+          name: 2048-PSP
+          path: dist/
+          branch: main
 
-      - name: Download build artifact
+      - name: Download triggering build artifact
+        if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
           name: 2048-PSP
@@ -30,35 +46,54 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Verify PSP artifact
+      - name: Verify EBOOT
         run: |
           set -euo pipefail
 
           test -s dist/PSP/GAME/2048/EBOOT.PBP
 
-          echo "=== PSP artifact ==="
+          echo "=== EBOOT.PBP ==="
           ls -lh dist/PSP/GAME/2048/EBOOT.PBP
 
-      - name: Install PPSSPP
+      - name: Download PPSSPP
         run: |
           set -euo pipefail
 
-          sudo apt-get update
-          sudo apt-get install -y ppsspp
+          wget -O PPSSPP.AppImage \
+            https://github.com/hrydgard/ppsspp/releases/latest/download/PPSSPPHeadless.AppImage
+
+          chmod +x PPSSPP.AppImage
 
       - name: Verify PPSSPP
         run: |
           set -euo pipefail
 
-          ppsspp --version || true
-          command -v ppsspp
+          ./PPSSPP.AppImage --version
 
-      - name: Run game in PPSSPP
+      - name: Start EBOOT in PPSSPP
         run: |
           set -euo pipefail
 
-          timeout 60s \
-            ppsspp \
+          echo "Starting 2048 in PPSSPP..."
+
+          set +e
+
+          timeout --signal=SIGTERM 30s \
+            ./PPSSPP.AppImage \
               --headless \
-              --fullscreen=false \
               dist/PSP/GAME/2048/EBOOT.PBP
+
+          status=$?
+
+          set -e
+
+          # 124 means timeout killed PPSSPP after 30 seconds.
+          # That's considered success: PPSSPP remained alive.
+          if [ "$status" -eq 124 ]; then
+            echo "PPSSPP ran for 30 seconds."
+            echo "EBOOT successfully started."
+            exit 0
+          fi
+
+          echo "PPSSPP exited with status $status"
+          exit "$status"
