@@ -1,13 +1,13 @@
 name: Smoketest
 
 on:
-  # Automatically test after PSP Build succeeds
+  # Automatically run after PSP Build succeeds
   workflow_run:
     workflows: ["PSP Build"]
     types:
       - completed
 
-  # Also allow manually running the test
+  # Also allow manual execution
   workflow_dispatch:
 
 permissions:
@@ -17,8 +17,9 @@ permissions:
 jobs:
   test:
     name: Start EBOOT in PPSSPP
-    # For automatic runs: only continue if the build succeeded.
-    # For manual runs: always continue.
+
+    # Automatic run: only test successful builds.
+    # Manual run: always run.
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
@@ -27,7 +28,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Download latest build artifact
+      - name: Download latest successful build
         if: github.event_name == 'workflow_dispatch'
         uses: dawidd6/action-download-artifact@v6
         with:
@@ -37,7 +38,7 @@ jobs:
           path: dist/
           branch: main
 
-      - name: Download triggering build artifact
+      - name: Download triggering build
         if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
@@ -55,45 +56,15 @@ jobs:
           echo "=== EBOOT.PBP ==="
           ls -lh dist/PSP/GAME/2048/EBOOT.PBP
 
-      - name: Download PPSSPP
-        run: |
-          set -euo pipefail
-
-          wget -O PPSSPP.AppImage \
-            https://github.com/hrydgard/ppsspp/releases/latest/download/PPSSPPHeadless.AppImage
-
-          chmod +x PPSSPP.AppImage
-
-      - name: Verify PPSSPP
-        run: |
-          set -euo pipefail
-
-          ./PPSSPP.AppImage --version
-
-      - name: Start EBOOT in PPSSPP
+      - name: Run EBOOT in PPSSPP Headless
         run: |
           set -euo pipefail
 
           echo "Starting 2048 in PPSSPP..."
 
-          set +e
-
-          timeout --signal=SIGTERM 30s \
-            ./PPSSPP.AppImage \
-              --headless \
-              dist/PSP/GAME/2048/EBOOT.PBP
-
-          status=$?
-
-          set -e
-
-          # 124 means timeout killed PPSSPP after 30 seconds.
-          # That's considered success: PPSSPP remained alive.
-          if [ "$status" -eq 124 ]; then
-            echo "PPSSPP ran for 30 seconds."
-            echo "EBOOT successfully started."
-            exit 0
-          fi
-
-          echo "PPSSPP exited with status $status"
-          exit "$status"
+          docker run --rm \
+            --shm-size=8g \
+            --volume "$GITHUB_WORKSPACE:/source" \
+            --workdir /source \
+            ghcr.io/hrydgard/ppsspp-headless:latest \
+            /source/dist/PSP/GAME/2048/EBOOT.PBP
