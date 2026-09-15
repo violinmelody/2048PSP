@@ -15,7 +15,6 @@ permissions:
 jobs:
   test:
     name: Start EBOOT in PPSSPP
-
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
@@ -47,62 +46,48 @@ jobs:
         run: |
           set -euo pipefail
 
-          test -s dist/PSP/GAME/2048/EBOOT.PBP
+          EBOOT="dist/PSP/GAME/2048/EBOOT.PBP"
+
+          test -s "$EBOOT"
 
           echo "=== EBOOT.PBP ==="
-          ls -lh dist/PSP/GAME/2048/EBOOT.PBP
+          ls -lh "$EBOOT"
 
-      - name: Build PPSSPP Headless
+      - name: Pull PPSSPP
         run: |
           set -euo pipefail
 
-          git clone --depth 1 https://github.com/hrydgard/ppsspp.git ppsspp
-
-          cd ppsspp
-
-          echo "=== Build PPSSPP Headless ==="
-
-          ./b.sh --headless
-
-          test -x build/PPSSPPHeadless || \
-            test -x build/PPSSPPHeadless/PPSSPPHeadless || \
-            find build -name PPSSPPHeadless -type f -print
-
-      - name: Locate PPSSPP Headless
-        run: |
-          set -euo pipefail
-
-          PPSSPP_HEADLESS="$(find ppsspp/build -name PPSSPPHeadless -type f -executable | head -n 1)"
-
-          if [ -z "$PPSSPP_HEADLESS" ]; then
-            echo "PPSSPPHeadless was not found."
-            find ppsspp/build -maxdepth 4 -type f -print
-            exit 1
-          fi
-
-          echo "Found: $PPSSPP_HEADLESS"
-
-          cp "$PPSSPP_HEADLESS" ./PPSSPPHeadless
-          chmod +x ./PPSSPPHeadless
+          docker pull linuxserver/ppsspp:latest
 
       - name: Start EBOOT in PPSSPP
         run: |
           set -euo pipefail
 
-          echo "Starting 2048 in PPSSPP..."
+          EBOOT="$GITHUB_WORKSPACE/dist/PSP/GAME/2048/EBOOT.PBP"
+
+          echo "=== Starting EBOOT in PPSSPP ==="
 
           set +e
 
           timeout --signal=SIGTERM 30s \
-            ./ppsspp/PPSSPPHeadless \
-            dist/PSP/GAME/2048/EBOOT.PBP
+            docker run --rm \
+            --shm-size=8g \
+            --volume "$EBOOT:/game/EBOOT.PBP:ro" \
+            linuxserver/ppsspp:latest \
+            /game/EBOOT.PBP
 
           status=$?
 
           set -e
 
           if [ "$status" -eq 124 ]; then
-            echo "PPSSPP stayed alive for 30 seconds."
+            echo "PPSSPP remained running for 30 seconds."
+            echo "EBOOT successfully started."
+            exit 0
+          fi
+
+          if [ "$status" -eq 0 ]; then
+            echo "PPSSPP exited normally."
             echo "EBOOT successfully started."
             exit 0
           fi
