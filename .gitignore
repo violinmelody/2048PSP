@@ -1,0 +1,9 @@
+*.o
+*.elf
+*.prx
+*.PBP
+*.SFO
+*.map
+/EBOOT.PBP
+/PARAM.SFO
+/dist/
