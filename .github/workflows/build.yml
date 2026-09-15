@@ -19,31 +19,6 @@ jobs:
       - name: Pull official PSPDEV Docker image
         run: docker pull pspdev/pspdev:latest
 
-      - name: Inspect PSPDEV environment
-        run: |
-          set -euo pipefail
-
-          docker run --rm \
-            pspdev/pspdev:latest \
-            sh -lc '
-              echo "=== Environment ==="
-              echo "PSPDEV=${PSPDEV:-<not set>}"
-              echo "PSPSDK=${PSPSDK:-<not set>}"
-              echo "PATH=$PATH"
-
-              echo
-              echo "=== psp-config ==="
-              command -v psp-config || true
-
-              echo
-              echo "=== build.mak files ==="
-              find / -name build.mak 2>/dev/null | head -20 || true
-
-              echo
-              echo "=== PSPDEV directories ==="
-              find / -maxdepth 3 -type d \( -name pspdev -o -name pspsdk \) 2>/dev/null | head -20 || true
-            '
-
       - name: Build 2048 in PSPDEV container
         run: |
           set -euo pipefail
@@ -55,26 +30,28 @@ jobs:
             sh -lc '
               set -e
 
+              export PSPDEV=/usr/local/pspdev
+              export PSPSDK="$PSPDEV/psp/sdk"
+              export PATH="$PSPDEV/bin:$PSPSDK/bin:$PATH"
+
               echo "=== PSPDEV environment ==="
-              echo "PSPDEV=${PSPDEV:-<not set>}"
-              echo "PSPSDK=${PSPSDK:-<not set>}"
+              echo "PSPDEV=$PSPDEV"
+              echo "PSPSDK=$PSPSDK"
               echo "PATH=$PATH"
 
               echo
-              echo "=== psp-config ==="
+              echo "=== Verify PSP tools ==="
               command -v psp-config
-              psp-config --pspdev-path || true
+              command -v psp-gcc
+              command -v make
 
               echo
-              echo "=== Build files ==="
-              find / -name build.mak 2>/dev/null | head -20
+              echo "=== SDK build.mak ==="
+              test -f "$PSPSDK/lib/build.mak"
+              ls -lh "$PSPSDK/lib/build.mak"
 
               echo
-              echo "=== Makefile ==="
-              sed -n "1,30p" Makefile
-
-              echo
-              echo "=== Building ==="
+              echo "=== Build ==="
               make clean
               make -j"$(nproc)"
             '
