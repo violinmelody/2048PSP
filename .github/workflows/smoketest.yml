@@ -1,13 +1,11 @@
 name: Smoketest
 
 on:
-  # Automatically run after PSP Build succeeds
   workflow_run:
     workflows: ["PSP Build"]
     types:
       - completed
 
-  # Also allow manual execution
   workflow_dispatch:
 
 permissions:
@@ -18,14 +16,12 @@ jobs:
   test:
     name: Start EBOOT in PPSSPP
 
-    # Automatic run: only test successful builds.
-    # Manual run: always run.
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
 
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
       - name: Download latest successful build
@@ -56,15 +52,60 @@ jobs:
           echo "=== EBOOT.PBP ==="
           ls -lh dist/PSP/GAME/2048/EBOOT.PBP
 
-      - name: Run EBOOT in PPSSPP Headless
+      - name: Build PPSSPP Headless
+        run: |
+          set -euo pipefail
+
+          git clone --depth 1 https://github.com/hrydgard/ppsspp.git ppsspp
+
+          cd ppsspp
+
+          echo "=== Build PPSSPP Headless ==="
+
+          ./b.sh --headless
+
+          test -x build/PPSSPPHeadless || \
+            test -x build/PPSSPPHeadless/PPSSPPHeadless || \
+            find build -name PPSSPPHeadless -type f -print
+
+      - name: Locate PPSSPP Headless
+        run: |
+          set -euo pipefail
+
+          PPSSPP_HEADLESS="$(find ppsspp/build -name PPSSPPHeadless -type f -executable | head -n 1)"
+
+          if [ -z "$PPSSPP_HEADLESS" ]; then
+            echo "PPSSPPHeadless was not found."
+            find ppsspp/build -maxdepth 4 -type f -print
+            exit 1
+          fi
+
+          echo "Found: $PPSSPP_HEADLESS"
+
+          cp "$PPSSPP_HEADLESS" ./PPSSPPHeadless
+          chmod +x ./PPSSPPHeadless
+
+      - name: Start EBOOT in PPSSPP
         run: |
           set -euo pipefail
 
           echo "Starting 2048 in PPSSPP..."
 
-          docker run --rm \
-            --shm-size=8g \
-            --volume "$GITHUB_WORKSPACE:/source" \
-            --workdir /source \
-            ghcr.io/hrydgard/ppsspp-headless:latest \
-            /source/dist/PSP/GAME/2048/EBOOT.PBP
+          set +e
+
+          timeout --signal=SIGTERM 30s \
+            ./ppsspp/PPSSPPHeadless \
+            dist/PSP/GAME/2048/EBOOT.PBP
+
+          status=$?
+
+          set -e
+
+          if [ "$status" -eq 124 ]; then
+            echo "PPSSPP stayed alive for 30 seconds."
+            echo "EBOOT successfully started."
+            exit 0
+          fi
+
+          echo "PPSSPP exited with status $status"
+          exit "$status"
