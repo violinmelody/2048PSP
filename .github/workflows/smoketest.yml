@@ -1,4 +1,4 @@
-name: PPSSPP Smoketest
+name: Smoketest
 
 on:
   workflow_run:
