@@ -1,6 +1,7 @@
 # 2048 for PSP
 
 A native 2048 game for the Sony PSP written in C
+[![PSP Build](https://github.com/violinmelody/2048PSP/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/violinmelody/2048PSP/actions/workflows/build.yml)
 
 **Version:** 1.0.0  
 **Author:** Miss Violin Melody  
