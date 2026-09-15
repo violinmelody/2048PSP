@@ -6,6 +6,12 @@ A native 2048 game for the Sony PSP written in C
 **Author:** Miss Violin Melody  
 **Website:** https://violinmelody.net
 
+![Screenshot 1](./screenshots/scr_01.jpg)
+
+![Screenshot 2](./screenshots/scr_02.jpg)
+
+![Screenshot 3](./screenshots/scr_03.gif)
+
 This project is not affiliated with or endorsed by Sony. [PSPDEV/PSPSDK](https://github.com/pspdev/pspsdk) is the open-source SDK/toolchain used to build the game.
 
 ## Features
